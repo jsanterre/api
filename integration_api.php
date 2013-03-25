@@ -1,26 +1,29 @@
 <?php
-
 /**
  * Formulize Object for API calls
  */
 class Formulize {
 
         private static $db = null;
-        private static $mapping_table = 'formulize_external_group_mapping';
+
+        //Resource types and tables for the mapping methods
+        const GROUP_RESOURCE = 0;
+        const USER_RESOURCE = 1;
+        private static $group_mapping_table = 'formulize_external_group_mapping';
+        private static $user_mapping_table = 'formulize_external_user_mapping';
         
         /**
-         * Intialize the Formuliz environment
+         * Intialize the Formulize environment
          */
         static function init() {
                 if (self::$db == null) {
                         include_once('mainfile.php');
-                        require_once('modules/formulize/include/functions.php');
+                        require_once(XOOPS_ROOT_PATH.'/modules/formulize/include/functions.php');
+
                         self::$db = $GLOBALS['xoopsDB'];
                 }
         }
         
-        //User Management
-
         /**
          * Create a new XOOPS user from the provided FormulizeUser data
          * @param   user_data   FormulizeUser       The user data
@@ -28,7 +31,7 @@ class Formulize {
          */
         static function createUser($user_data) {
                 self::init();
-                if($user_data->get('uid') == -1) 
+                if($user_data->get('uid') == -1)
                         throw new Exception('Formulize::createUser() - The supplied user doesn\'t have an ID.');
                 //Create a XOOPS user from the provided FormulizeUser data
                 $member_handler = xoops_gethandler('member');
@@ -41,15 +44,13 @@ class Formulize {
                 $newUser->setVar('notify_method', $user_data->get('notify_method')); //email
                 $newUser->setVar('level', $user_data->get('level')); //active, can login
                 //If the user wasn't inserted, return false
-
                 if (!$member_handler->insertUser($newUser, true)) {
                         return false;
                 }
+
+                //Map the created user to the external ID provided
                 $user_id = $newUser->getVar('uid');
-                //If setting the proper uid failed, return false
-                if(!self::$db->queryF('UPDATE ' . self::$db->prefix('users') . ' SET uid = \'' . $user_data->get('uid') . '\' WHERE uid = \'' . $user_id . '\'')) {
-                        return false;
-                }
+                self::createResourceMapping(self::USER_RESOURCE, $user_data->get('uid'), $user_id);
 
                 return true;
         }
@@ -61,6 +62,7 @@ class Formulize {
          */
         static function getUser($user_id) {
                 self::init();
+                $user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
                 $member_handler = xoops_gethandler('member');
                 $user = $member_handler->getUser($user_id);
 
@@ -88,11 +90,13 @@ class Formulize {
          */
         static function deleteUser($user_id) {
                 self::init();
+                $external_id = $user_id;
+                $user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
                 $uuid = uniqid(); //Generate a UUID for obfuscation
                 $member_handler = xoops_gethandler('member');
                 $user = $member_handler->getUser($user_id);
                 //Obfuscate identification
-                self::updateUser($user_id, array(
+                self::updateUser($external_id, array(
                         'uname' => $uuid . '-' . $user->getVar('uname'),
                         'login_name' => $uuid . '-' . $user->getVar('login_name'),
                         'email' => $uuid . '-' . $user->getVar('email')
@@ -108,6 +112,7 @@ class Formulize {
          */
         static function updateUser($user_id, $data) {
                 self::init();
+                $user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
                 $member_handler = xoops_gethandler('member');
                 $xoops_user = $member_handler->getUser($user_id);
                 //Update fields specified in $user_data
@@ -141,7 +146,7 @@ class Formulize {
                 $result = $group_handler->insert($xoops_group);
                 if($result) {
                         //If the group was created, add it to the mapping
-                        return self::createGroupMapping($group->get('groupid'), $xoops_group->getVar('groupid'));
+                        return self::createResourceMapping(self::GROUP_RESOURCE, $group->get('groupid'), $xoops_group->getVar('groupid'));
                 } else {
                         return false;
                 }
@@ -156,7 +161,7 @@ class Formulize {
         static function renameGroup($groupid, $name) {
                 self::init();
                 $group_handler = xoops_gethandler('group');
-                $xoops_groupid = self::getXoopsGroupID($groupid);
+                $xoops_groupid = self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid);
                 //If a group was found, rename it
                 if($xoops_groupid != null) {
                         $xoops_group = $group_handler->get($xoops_groupid);
@@ -182,7 +187,7 @@ class Formulize {
         static function deleteGroup($groupid) {
                 self::init();
                 $group_handler = xoops_gethandler('group');
-                $xoops_groupid = self::getXoopsGroupID($groupid);
+                $xoops_groupid = self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid);
                 //If a group was found, delete it
                 if($xoops_groupid != null) {
                         $xoops_group = $group_handler->get($xoops_groupid);             
@@ -206,8 +211,9 @@ class Formulize {
          */
         static function addUserToGroup($user_id, $groupid) {
                 self::init();
+                $user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
                 $members = xoops_gethandler('member');
-                return $members->addUserToGroup(self::getXoopsGroupID($groupid), $user_id);
+                return $members->addUserToGroup(self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid), $user_id);
         }
         
         /**
@@ -218,8 +224,9 @@ class Formulize {
          */ 
         static function removeUserFromGroup($user_id, $groupid) {
                 self::init();
+                $user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
                 $members = xoops_gethandler('member');
-                return $members->removeUsersFromGroup(self::getXoopsGroupID($groupid), array($user_id));
+                return $members->removeUsersFromGroup(self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid), array($user_id));
         }
         
         /**
@@ -287,11 +294,8 @@ class Formulize {
                 return $options;
         }
 
-		static function renderScreen($screenID) {
-		
-		//require_once('libraries/jalalijscalendar/*.js');
-		//echo '<script language="javascript" src="libraries/jalalijscalendar/*.js"></script>'; 
-		
+	static function renderScreen($screenID)
+	{
 		//Set the screen ID
 		$formulize_screen_id = $screenID;
 
@@ -325,11 +329,9 @@ class Formulize {
 			//scripts to our page load, in order for the calendar to achieve functionality.
 			if(isset($GLOBALS['formulize_calendarFileRequired']))
 			{
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/calendar.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/calendar-setup.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/jalali.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/language/" . $icmsConfig['language'] . "/local.date.js'></script>";
-				echo "<script type='text/javascript'>".$GLOBALS['formulize_calendarFileRequired']."</script>";
+                                foreach($GLOBALS['formulize_calendarFileRequired']['scripts'] as $thisScript) {
+                                        echo "<script type='text/javascript' src='" . $thisScript . "'></script>";
+                                }
 				
 				//In order to append our stylesheet, and ensure that no matter the load and buffer order of our page, we shall be including
 				//the style sheet via a JS call that appends the link tag to the head section on load.
@@ -344,9 +346,11 @@ class Formulize {
 						newNode.setAttribute('href', fileURL);
 						document.getElementsByTagName('head')[0].appendChild(newNode);
 					}
-					fetchCalendarCSS('" . ICMS_URL . "/libraries/jalalijscalendar/aqua/style.css');
-					</script>
-				";
+                                        ";
+                                        foreach($GLOBALS['formulize_calendarFileRequired']['stylesheets'] as $thisSheet) {
+                                                print "fetchCalendarCSS('" . $thisSheet . "')";
+                                        }
+                                print "</script>";
 			}
 		}
 		
@@ -355,30 +359,45 @@ class Formulize {
 		//Close our div tag
 		echo '</div>';
 	}
+
         /**
-         * Insert a group mapping from the external CMS to Formulize
-         * @param       external_groupid        int                     The external group ID
-         * @param       groupid                         int                     The Formulize group ID
+         * Insert a mapping from the external resource to a Formulize resource
+         * @param       external_id                     int                     The external resource ID
+         * @param       id                                      int                     The Formulize resource ID
          * @return                                              boolean         Whether mapping was successful
          * @throws      An exception is thrown if a supplied ID is not of integer form.
          */
-        private static function createGroupMapping($external_groupid, $groupid) {
-                $mapping_table = self::$db->prefix(self::$mapping_table);
+        private static function createResourceMapping($resource_type, $external_id, $id) {
+                self::init();
+                $noun = ''; //The noun ("group", "user", etc. specifies the resource noun used in the query)
+                switch($resource_type) {
+                        case Formulize::GROUP_RESOURCE:
+                                $mapping_table = self::$db->prefix(self::$group_mapping_table);
+                                $noun = 'group';
+                        break;
+                        case Formulize::USER_RESOURCE:
+                                $mapping_table = self::$db->prefix(self::$user_mapping_table);
+                                $noun = 'user';
+                        break;
+                        default:
+                                throw new Exception('Formulize::createResourceMapping() - Invalid resource type specified.');
+                }
+
                 //Determine whether any mappings exist with the specified IDs
                 $num_mappings = mysql_num_rows(self::$db->queryF('
                         SELECT * FROM ' . $mapping_table . ' 
-                        WHERE groupid = ' . intval($groupid) . ' 
-                        OR external_groupid = ' . intval($external_groupid)
+                        WHERE ' . $noun . 'id = ' . intval($id) . ' 
+                        OR external_' . $noun . 'id = ' . intval($external_id)
                 ));
                 //+0 will allow string input to be implicitly cast to a numeric
                 //type and then checked for integer form
-                if(!is_int($external_groupid + 0) || !is_int($groupid + 0))
-                        throw new Exception('Formulize::createGroupMapping() - Expecting two integer IDs.');
+                if(!is_int($external_id + 0) || !is_int($id + 0))
+                        throw new Exception('Formulize::createResourceMapping() - Expecting two integer IDs.');
                 if($num_mappings == 0) {
                         return self::$db->queryF('
                                 INSERT INTO ' . $mapping_table . '
-                                (external_groupid, groupid)
-                                VALUES ( ' . intval($external_groupid) . ',' . intval($groupid) . ')
+                                (external_' . $noun . 'id, ' . $noun . 'id)
+                                VALUES ( ' . intval($external_id) . ',' . intval($id) . ')
                         ');
                 } else {
                         //A group mapping containing at least one of the IDs already exists. Can't create it.
@@ -387,14 +406,28 @@ class Formulize {
         }
 
         /**
-         * Converts an external groupid into a XOOPS groupid using the mapping table
-         * @param       external_groupid        int             The external groupid to convert
-         * @return                                              int             The associated XOOPS groupid
+         * Converts an external resource ID into a XOOPS resource ID using the associated mapping table
+         * @param       external_groupid        int             The external resource ID to convert
+         * @return                                              int             The associated XOOPS resource ID
          */
-        private static function getXoopsGroupID($external_groupid) {
+        static function getXoopsResourceID($resource_type, $external_id) {
+                self::init();
+                $noun = ''; //The noun ("group", "user", etc. specifies the resource noun used in the query)
+                switch($resource_type) {
+                        case Formulize::GROUP_RESOURCE:
+                                $mapping_table = self::$group_mapping_table;
+                                $noun = 'group';
+                        break;
+                        case Formulize::USER_RESOURCE:
+                                $mapping_table = self::$user_mapping_table;
+                                $noun = 'user';
+                        break;
+                        default:
+                                throw new Exception('Formulize::getXoopsResourceID() - Invalid resource type specified.');
+                }
                 $mapping_result = mysql_fetch_row(self::$db->queryF('
-                        SELECT groupid FROM ' . self::$db->prefix(self::$mapping_table) . '
-                        WHERE external_groupid = ' . intval($external_groupid)
+                        SELECT ' . $noun . 'id FROM ' . self::$db->prefix($mapping_table) . '
+                        WHERE external_' . $noun . 'id = ' . intval($external_id)
                 ));
                 return $mapping_result[0];
         }
