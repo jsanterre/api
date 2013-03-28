@@ -19,7 +19,7 @@ class Formulize {
 	static function init() {
 		if (self::$db == null) {
 			include_once('mainfile.php');
-			// require_once('modules/formulize/include/functions.php');
+			require_once('modules/formulize/include/functions.php');
 
 			self::$db = $GLOBALS['xoopsDB'];
 			self::$db->allowWebChanges = true;
@@ -108,11 +108,13 @@ class Formulize {
 	 */
 	static function deleteUser($user_id) {
 		self::init();
-		$external_id = $user_id;
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
 		$uuid = uniqid(); //Generate a UUID for obfuscation
 		$member_handler = xoops_gethandler('member');
-		$user = $member_handler->getUser($user_id);
+		$user = $member_handler->getUser($xoops_user_id);
 		//Obfuscate identification
 		self::updateUser($external_id, array(
 			'uname' => $uuid . '-' . $user->getVar('uname'),
@@ -130,12 +132,16 @@ class Formulize {
 	 */
 	static function updateUser($user_id, $data) {
 		self::init();
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
 		$member_handler = xoops_gethandler('member');
-		$xoops_user = $member_handler->getUser($user_id);
+		$xoops_user = $member_handler->getUser($xoops_user_id);
 		//Update fields specified in $user_data
 		if($xoops_user) {
 			foreach($data as $key => $value) {
+			if($key!='uid')
 				$xoops_user->setVar($key, $value);
 			}
 			//If the user wasn't inserted, return false
@@ -230,9 +236,16 @@ class Formulize {
 	 */
 	static function addUserToGroup($user_id, $groupid) {
 		self::init();
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
+		$xoops_group_id = self::getXoopsResourceID(self::GROUP_RESOURCE, $groupid);
+		if(!$xoops_group_id) {
+			return false;
+		}
 		$members = xoops_gethandler('member');
-		return $members->addUserToGroup(self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid), $user_id);
+		return $members->addUserToGroup($xoops_group_id, $xoops_user_id);
 	}
 	
 	/**
@@ -243,9 +256,16 @@ class Formulize {
 	 */ 
 	static function removeUserFromGroup($user_id, $groupid) {
 		self::init();
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
+		$xoops_group_id = self::getXoopsResourceID(self::GROUP_RESOURCE, $groupid);
+		if(!$xoops_group_id) {
+			return false;
+		}
 		$members = xoops_gethandler('member');
-		return $members->removeUsersFromGroup(self::getXoopsResourceID(Formulize::GROUP_RESOURCE, $groupid), array($user_id));
+		return $members->removeUsersFromGroup($xoops_group_id, array($xoops_user_id));
 	}
 	
 	/**
@@ -256,6 +276,7 @@ class Formulize {
 	 */
 	static function getScreens($limitUser=false) {
 		global $xoopsUser;
+		
 		self::init();
 		$options = array();
 
@@ -273,12 +294,17 @@ class Formulize {
 			';
 		//If only screens available to the current user are desired
 		} else {
+			if(!$xoopsUser) {
+			$options[0] = ('No Formulize Screens Found');
+			return $options;
+			}
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
 			$accessible_forms = array();
-
+			
 			//Get the groups this member belongs to
 			$groups = $members->getGroupsByUser($xoopsUser->getVar('uid'));
+			
 			//Get the forms visible to each of those groups, and unite them
 			foreach($groups as $group) {
 				$group_forms = $group_perms->getItemIds('view_form', $group, getFormulizeModId());
