@@ -276,6 +276,7 @@ class Formulize {
 	 */
 	static function getScreens($limitUser=false) {
 		global $xoopsUser;
+		
 		self::init();
 		$options = array();
 
@@ -293,6 +294,10 @@ class Formulize {
 			';
 		//If only screens available to the current user are desired
 		} else {
+			if(!$xoopsUser) {
+				$options[0] = ('No Formulize Screens Found');
+				return $options;
+			}
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
 			$accessible_forms = array();
