@@ -462,18 +462,7 @@ function displayEntries($formframe, $mainform="", $loadview="", $loadOnlyView=0,
 
 	$showcols = removeNotAllowedCols($fid, $frid, $showcols, $groups); // converts old format metadata fields to new ones too if necessary
 
-	// clear quick searches for any columns not included now
-	$hiddenQuickSearches = array(); // array used to indicate quick searches that should be present even if the column is not displayed to the user
-	foreach($_POST as $k=>$v) {
-		if(substr($k, 0, 7) == "search_" AND !in_array(substr($k, 7), $showcols)) {
-			if(substr($v, 0, 1) == "!" AND substr($v, -1) == "!") {// don't strip searches that have ! at front and back
-				$hiddenQuickSearches[] = substr($k, 7);
-			} else {
-				unset($_POST[$k]);
-			}
-		}
-	}
-	
+		
 	// Create settings array to pass to form page or to other functions
 
 	$settings['title'] = $displaytitle;
@@ -503,6 +492,35 @@ function displayEntries($formframe, $mainform="", $loadview="", $loadOnlyView=0,
 		$settings['lastloaded'] = $_POST['lastloaded'];
 	}
 
+	// clear quick searches for any columns not included now
+	// also, convert any { } terms to literal values for users who can't update other reports, if the last loaded report doesn't belong to them (they're presumably just report consumers, so they don't need to preserve the abstract terms)
+	$hiddenQuickSearches = array(); // array used to indicate quick searches that should be present even if the column is not displayed to the user
+	foreach($_POST as $k=>$v) {
+		if(substr($k, 0, 7) == "search_" AND !in_array(substr($k, 7), $showcols)) {
+			if(substr($v, 0, 1) == "!" AND substr($v, -1) == "!") {// don't strip searches that have ! at front and back
+				$hiddenQuickSearches[] = substr($k, 7);
+				continue; // since the { } replacement is meant for the ease of use of non-admin users, and hiddenQuickSearches never show up to users on screen, we can skip the potentially expensive operations below in this loop
+			} else {
+				unset($_POST[$k]);
+			}
+		}
+		// if this is not a report/view that was created by the user, and they don't have update permission, then convert any { } terms to literals
+		if(strstr($v, "{") AND strstr($v, "}")) {
+			$activeViewId = substr($settings['lastloaded'], 1); // will have a p in front of the number, to show it's a published view (or an s, but that's unlikely to ever happen in this case)
+			$ownerOfLastLoadedViewData = q("SELECT sv_owner_uid FROM " . $xoopsDB->prefix("formulize_saved_views") . " WHERE sv_id=".intval($activeViewId));
+			$ownerOfLastLoadedView = $ownerOfLastLoadedViewData[0]['sv_owner_uid'];
+			if(!$update_other_reports AND $uid != $ownerOfLastLoadedView) {
+				$requestKeyToUse = substr($v,1,-1);
+				if(isset($_POST[$requestKeyToUse])) {
+					$_POST[$k] = $_POST[$requestKeyToUse];
+				} elseif(isset($_GET[$requestKeyToUse])) {
+					$_POST[$k] = $_GET[$requestKeyToUse];
+				} elseif($v == "{USER}" AND $xoopsUser) {
+					$_POST[$k] = $xoopsUser->getVar('name') ? $xoopsUser->getVar('name') : $xoopsUser->getVar('uname');
+				}
+			}
+		}
+	}
 
 	$settings['currentview'] = $currentView;
 
@@ -646,7 +664,9 @@ function displayEntries($formframe, $mainform="", $loadview="", $loadOnlyView=0,
 					}
 				}
   			$viewEntryScreen_handler->render($displayScreen, $this_ent, $settings);
-        return;
+			global $renderedFormulizeScreen; // picked up at the end of initialize.php so we set the right info in the template when the whole page is rendered
+			$renderedFormulizeScreen = $displayScreen;
+			return;
       }
 		} else {
 
@@ -672,6 +692,14 @@ function displayEntries($formframe, $mainform="", $loadview="", $loadOnlyView=0,
 	
 	} 
 
+	// check if we're coming back from a page where a form entry was saved, and if so, synch any subform blanks that might have been written on this page load, synch them with the mainform entry that was written
+	$formToSynch = isset($_POST['primaryfid']) ? intval($_POST['primaryfid']) : 0;
+	if($formToSynch) {
+		if(isset($_POST['entry'.$formToSynch]) AND $enryToSynch = $_POST['entry'.$formToSynch]) {
+			synchSubformBlankDefaults($formToSynch, $entryToSynch);
+		}
+	}	
+	
 	// process a clicked custom button
 	// must do this before gathering the data!
 	$messageText = "";
@@ -901,7 +929,7 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 	}
 	
 	if(strstr($_SERVER['HTTP_USER_AGENT'], "MSIE")) {
-		$submitButton = "<input type=submit name=submitx style=\"width:0px; height:0px;\" value='' ></input>\n";
+		$submitButton = "<input type=submit name=submitx style=\"width:0px; height:0px; border-width: 0px; padding: 0px;\" value='' ></input>\n";
 	} else {
 		$submitButton =  "<input type=submit name=submitx style=\"visibility: hidden;\" value='' ></input>\n";
 	}
@@ -1011,7 +1039,7 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 			print "</table></div>";
 		}	
 	
-		print "<table cellpadding=10><tr><td id='titleTable' style=\"vertical-align: top;\" width=100%>";
+		print "<table cellpadding=10><tr><td style=\"vertical-align: top;\" width=100%>";
 		
 		print "<h1>" . trans($title) . "</h1>";
 	
@@ -1023,9 +1051,9 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 			print "</td>";
 			if(!$settings['lockcontrols']) {
 	
-				print "<td id='buttonsTable' class='outerTable' rowspan=3 style=\"vertical-align: bottom;\">";	      
+				print "<td rowspan=3 style=\"vertical-align: bottom;\">";	      
 		
-				print "<table><tr><td id='leftButtonColumn' class='innerTable' style=\"vertical-align: bottom;\">";
+				print "<table><tr><td style=\"vertical-align: bottom;\">";
 		
 				print "<p>$submitButton<br>";
 				if($atLeastOneActionButton) {
@@ -1040,7 +1068,7 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 				// you can always create and delete your own reports right now (delete_own_reports perm has no effect).  If can delete other reports, then set $pubstart to 10000 -- which is done above -- (ie: can delete published as well as your own, because the javascript will consider everything beyond the start of 'your saved views' to be saved instead of published (published be thought to never begin))
 				if( $thisButtonCode = $buttonCodeArray['deleteViewButton']) { print "<br>$thisButtonCode"; }
 
-				print "</p></td><td id='middleButtonColumn' class='innerTable' style=\"vertical-align: bottom;\"><p style=\"text-align: center;\">";
+				print "</p></td><td style=\"vertical-align: bottom;\"><p style=\"text-align: center;\">";
 
 				if(($add_own_entry AND $singleMulti[0]['singleentry'] == "") OR (($del_own OR $del_others) AND !$settings['lockcontrols'])) {
 					if( $thisButtonCode = $buttonCodeArray['selectAllButton']) { print "$thisButtonCode"; }
@@ -1053,7 +1081,7 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 					if( $thisButtonCode = $buttonCodeArray['deleteButton']) { print "$thisButtonCode<br>"; }
 				}
 
-				print "</p></td><td id='rightButtonColumn' class='innerTable' style=\"vertical-align: bottom;\"><p style=\"text-align: center;\">";
+				print "</p></td><td style=\"vertical-align: bottom;\"><p style=\"text-align: center;\">";
 
 				if( $thisButtonCode = $buttonCodeArray['calcButton']) { print "<br>$thisButtonCode"; }
 				if( $thisButtonCode = $buttonCodeArray['advCalcButton']) { print "<br>$thisButtonCode"; }
@@ -1074,11 +1102,11 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 			} // end of if controls are locked
 
 			// cell for add entry buttons
-			print "<tr><td id='outerAddEntryPanel' style=\"vertical-align: top;\">\n";
+			print "<tr><td style=\"vertical-align: top;\">\n";
 
 			if(!$settings['lockcontrols']) {
 				// added October 18 2006 -- moved add entry buttons to left side to emphasize them more
-				print "<table><tr><td id='innerAddEntryPanel' style=\"vertical-align: bottom;\"><p>\n";
+				print "<table><tr><td style=\"vertical-align: bottom;\"><p>\n";
 	
 				$addButton = $buttonCodeArray['addButton'];
 				$addMultiButton = $buttonCodeArray['addMultiButton'];
@@ -1102,7 +1130,7 @@ function drawInterface($settings, $fid, $frid, $groups, $mid, $gperm_handler, $l
 				print "<br><br></p></td></tr></table>\n";
 			}
 	
-			print "</td></tr><tr><td id=currentViewSelectTable style=\"vertical-align: bottom;\">";
+			print "</td></tr><tr><td style=\"vertical-align: bottom;\">";
 	
 			if ($currentViewList = $buttonCodeArray['currentViewList']) { print $currentViewList; }
 	
@@ -1895,7 +1923,7 @@ function formulize_buildDateRangeFilter($handle, $search_text) {
 				script = document.createElement('script');
 				script.id = 'jQuery';
 				script.type = 'text/javascript';
-				script.src = '".XOOPS_URL."/modules/formulize/jquery/jquery-1.4.2.min.js';
+				script.src = '".XOOPS_URL."/modules/formulize/libraries/jquery/jquery-1.4.2.min.js';
 				head.appendChild(script);
 		}
 		$().click(function() {
@@ -3048,7 +3076,7 @@ if (typeof jQuery == 'undefined') {
 	script = document.createElement('script');
 	script.id = 'jQuery';
 	script.type = 'text/javascript';
-	script.src = '<?php print XOOPS_URL; ?>/modules/formulize/jquery/jquery-1.4.2.min.js';
+	script.src = '<?php print XOOPS_URL; ?>/modules/formulize/libraries/jquery/jquery-1.4.2.min.js';
 	head.appendChild(script);
 }
 
@@ -3057,13 +3085,13 @@ if($useXhr) {
 	print " initialize_formulize_xhr();\n";
 	drawXhrJavascript();
 	print "</script>";
-	print "<script type=\"text/javascript\" src=\"".XOOPS_URL."/modules/formulize/jquery/jquery-1.4.2.min.js\"></script>\n";
+	print "<script type=\"text/javascript\" src=\"".XOOPS_URL."/modules/formulize/libraries/jquery/jquery-1.4.2.min.js\"></script>\n";
 	print "<script type='text/javascript'>";
 	print "var elementStates = new Array();";
 	print "var savingNow = \"\";";
 	print "var elementActive = \"\";";
 ?>
-function renderElement(handle,entryId,fid,check) {
+function renderElement(handle,element_id,entryId,fid,check) {
 	if(elementStates[handle] == undefined) {
 		elementStates[handle] = new Array();
 	}
@@ -3077,27 +3105,29 @@ function renderElement(handle,entryId,fid,check) {
 		elementStates[handle][entryId] = jQuery("#deDiv_"+handle+"_"+entryId).html();
 		var formulize_xhr_params = [];
 		formulize_xhr_params[0] = handle;
-		formulize_xhr_params[1] = entryId;
-		formulize_xhr_params[2] = fid;
+		formulize_xhr_params[1] = element_id;
+		formulize_xhr_params[2] = entryId;
+		formulize_xhr_params[3] = fid;
 		formulize_xhr_send('get_element_html',formulize_xhr_params);
 	} else {
 		if(check && savingNow == "") {
 			savingNow = true;
 			jQuery("#deDiv_"+handle+"_"+entryId).fadeTo("fast",0.33);
-			if(jQuery("[name='de_"+fid+"_"+entryId+"_"+handle+"[]']").length > 0) { 
-			  nameToUse = "[name='de_"+fid+"_"+entryId+"_"+handle+"[]']";
+			if(jQuery("[name='de_"+fid+"_"+entryId+"_"+element_id+"[]']").length > 0) { 
+			  nameToUse = "[name='de_"+fid+"_"+entryId+"_"+element_id+"[]']";
 			} else {
-			  nameToUse = "[name='de_"+fid+"_"+entryId+"_"+handle+"']";
+			  nameToUse = "[name='de_"+fid+"_"+entryId+"_"+element_id+"']";
 			}
-			jQuery.post("<?php print XOOPS_URL; ?>/modules/formulize/include/readelements.php", jQuery(nameToUse+",[name='decue_"+fid+"_"+entryId+"_"+handle+"']").serialize(), function(data) {
+			jQuery.post("<?php print XOOPS_URL; ?>/modules/formulize/include/readelements.php", jQuery(nameToUse+",[name='decue_"+fid+"_"+entryId+"_"+element_id+"']").serialize(), function(data) {
 				if(data) {
 				   alert(data);	
 				} else {
 					// need to get the current value, and then prep it, and then format it
 					var formulize_xhr_params = [];
 					formulize_xhr_params[0] = handle;
-					formulize_xhr_params[1] = entryId;
-					formulize_xhr_params[2] = fid;
+					formulize_xhr_params[1] = element_id;
+					formulize_xhr_params[2] = entryId;
+					formulize_xhr_params[3] = fid;
 					formulize_xhr_send('get_element_value',formulize_xhr_params);
 				}
 			});
@@ -3113,15 +3143,17 @@ function renderElement(handle,entryId,fid,check) {
 
 function renderElementHtml(elementHtml,params) {
 	handle = params[0];
-	entryId = params[1];
-	fid = params[2];
-	jQuery("#deDiv_"+handle+"_"+entryId).html(elementHtml+"<br /><a href=\"\" onclick=\"javascript:renderElement('"+handle+"', "+entryId+", "+fid+",1);return false;\"><img src=\"<?php print XOOPS_URL; ?>/modules/formulize/images/check.gif\" /></a>&nbsp;&nbsp;&nbsp;<a href=\"\" onclick=\"javascript:renderElement('"+handle+"', "+entryId+", "+fid+");return false;\"><img src=\"<?php print XOOPS_URL; ?>/modules/formulize/images/x-wide.gif\" /></a>");
+	element_id = params[1];
+	entryId = params[2];
+	fid = params[3];
+	jQuery("#deDiv_"+handle+"_"+entryId).html(elementHtml+"<br /><a href=\"\" onclick=\"javascript:renderElement('"+handle+"', "+element_id+", "+entryId+", "+fid+",1);return false;\"><img src=\"<?php print XOOPS_URL; ?>/modules/formulize/images/check.gif\" /></a>&nbsp;&nbsp;&nbsp;<a href=\"\" onclick=\"javascript:renderElement('"+handle+"', "+element_id+", "+entryId+", "+fid+");return false;\"><img src=\"<?php print XOOPS_URL; ?>/modules/formulize/images/x-wide.gif\" /></a>");
 }
 
 function renderElementNewValue(elementValue,params) {
 	handle = params[0];
-	entryId = params[1];
-	fid = params[2];
+	element_id = params[1];
+	entryId = params[2];
+	fid = params[3];
 	jQuery("#deDiv_"+handle+"_"+entryId).fadeTo("fast",1);
 	jQuery("#deDiv_"+handle+"_"+entryId).html(elementValue);
 	elementStates[handle].splice(entryId, 1);
@@ -3483,6 +3515,7 @@ foreach($lockedColumns as $thisColumn) {
 	});
 
 	var saveButtonOffset = jQuery('#floating-list-of-entries-save-button').offset();
+	saveButtonOffset.left = 15;
 	floatSaveButton(saveButtonOffset);
 	jQuery(window).scroll(function () {
 		floatSaveButton(saveButtonOffset);
