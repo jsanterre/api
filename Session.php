@@ -44,15 +44,8 @@ class icms_core_Session {
 		{
 			$externalUid = $GLOBALS['current_user']->ID;
 		}
-		elseif(isset($GLOBALS['formulizeHostSystemUserId'])) { // Joomla
-			if($GLOBALS['formulizeHostSystemUserId']) {
-				$externalUid = $GLOBALS['formulizeHostSystemUserId'];
-			} else {
-				$cookie_time = time()-10000;
-				$instance->update_cookie(session_id(), $cookie_time);
-				$instance->destroy(session_id());
-				unset($_SESSION['xoopsUserId']);
-			}
+		elseif(isset($GLOBALS['joomlaUserId'])) { // Joomla
+		    $externalUid = $GLOBALS['joomlaUserId'];
 		}
 		elseif(is_object($user)) {
 		  $externalUid = 0;
@@ -70,9 +63,8 @@ class icms_core_Session {
 		    }
 		  }
 		}
-		
 		  if($externalUid) {
-			$xoops_userid = Formulize::getXoopsResourceID(Formulize::USER_RESOURCE, $externalUid);
+		  	$xoops_userid = Formulize::getXoopsResourceID(Formulize::USER_RESOURCE, $externalUid);
 		    $icms_user = icms::handler('icms_member')->getUser( $xoops_userid );
 		    if(is_object($icms_user)) {
 		      // set a few things in $_SESSION, similar to what include/checklogin.php does, and make a cookie and a database entry
@@ -97,6 +89,7 @@ class icms_core_Session {
 		    }
 		  }
 		
+		
 		// If there's no xoopsUserId set in the $_SESSION yet, and there's an ICMS session cookie present, then let's make one last attempt to load the session (could be because we're embedded in a system that doesn't have a parallel user table like what is used above)
 		$icms_session_name = ($icmsConfig['use_mysession'] && $icmsConfig['session_name'] != '') ? $icmsConfig['session_name'] : session_name();
 		if(!isset($_SESSION['xoopsUserId']) AND isset($_COOKIE[$icms_session_name])) {
@@ -104,7 +97,6 @@ class icms_core_Session {
 				session_decode($icms_session_data); // put session data into $_SESSION, including the xoopsUserId if present, same as if session_start had been successful
 			}
 		}
-		
 		// END OF ADDED CODE
 
 		if (!empty($_SESSION['xoopsUserId'])) {
