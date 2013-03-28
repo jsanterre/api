@@ -295,8 +295,8 @@ class Formulize {
 		//If only screens available to the current user are desired
 		} else {
 			if(!$xoopsUser) {
-				$options[0] = ('No Formulize Screens Found');
-				return $options;
+			$options[0] = ('No Formulize Screens Found');
+			return $options;
 			}
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
