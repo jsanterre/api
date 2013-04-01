@@ -295,8 +295,8 @@ class Formulize {
 		//If only screens available to the current user are desired
 		} else {
 			if(!$xoopsUser) {
-			$options[0] = ('No Formulize Screens Found');
-			return $options;
+				$options[0] = ('No Formulize Screens Found');
+				return $options;
 			}
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
@@ -339,8 +339,9 @@ class Formulize {
 		return $options;
 	}
 
-	static function renderScreen($screenID)
-	{
+	static function renderScreen ($screenID) {
+		self::init();
+		
 		//Set the screen ID
 		$formulize_screen_id = $screenID;
 
@@ -348,7 +349,7 @@ class Formulize {
 		echo '<div id=formulize_form>';
 		
 		//Include our header file in order to set up xoTheme
-		include XOOPS_ROOT_PATH . "/header.php";
+		include XOOPS_ROOT_PATH . '/header.php';
 		
 		//If we have a xoTheme, then we will be able to dupe the Formulize system into thinking we are in icms, in order
 		//to set up an icmsTheme object. The icmsTheme object is required by a number of elements that should work in 3rd
@@ -373,10 +374,12 @@ class Formulize {
 			//If this global is set, then we are requiring a date-box element. In that case we shall add the following
 			//scripts to our page load, in order for the calendar to achieve functionality.
 			if(isset($GLOBALS['formulize_calendarFileRequired']))
-			{
-                                foreach($GLOBALS['formulize_calendarFileRequired']['scripts'] as $thisScript) {
-                                        echo "<script type='text/javascript' src='" . $thisScript . "'></script>";
-                                }
+			{	
+				foreach($GLOBALS['formulize_calendarFileRequired']['scripts'] as $thisScript) {
+                                       echo "<script type='text/javascript' src='" . $thisScript . "'></script>";
+                }
+				
+				echo "<script type='text/javascript'>".$GLOBALS['formulize_calendarFileRequired']['src']."</script>";
 				
 				//In order to append our stylesheet, and ensure that no matter the load and buffer order of our page, we shall be including
 				//the style sheet via a JS call that appends the link tag to the head section on load.
@@ -390,22 +393,19 @@ class Formulize {
 						newNode.setAttribute('type', 'text/css');
 						newNode.setAttribute('href', fileURL);
 						document.getElementsByTagName('head')[0].appendChild(newNode);
+					}";
+					foreach($GLOBALS['formulize_calendarFileRequired']['stylesheets'] as $thisSheet) {
+						print " fetchCalendarCSS('" . $thisSheet ."'); ";
 					}
-                                        ";
-                                        foreach($GLOBALS['formulize_calendarFileRequired']['stylesheets'] as $thisSheet) {
-                                                print "fetchCalendarCSS('" . $thisSheet . "')";
-                                        }
-                                print "</script>";
+					print "</script>";
 			}
 		}
-		
 		//Inject formulize content
 		echo $content;
 		//Close our div tag
 		echo '</div>';
 	}
-
-
+	
 	/**
 	 * Insert a mapping from the external resource to a Formulize resource
 	 * @param external_id     int     The external resource ID
