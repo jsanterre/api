@@ -29,7 +29,7 @@ class Formulize {
 	/**
 	 * Create a new XOOPS user from the provided FormulizeUser data
 	 * @param   user_data   FormulizeUser       The user data
-	 * @return        boolean       Whether the user was successfully createdgetU
+	 * @return        boolean       Whether the user was successfully created
 	 */
 	static function createUser($user_data) {
 		self::init();
@@ -107,10 +107,13 @@ class Formulize {
 	static function deleteUser($user_id) {
 		self::init();
 		$external_id = $user_id;
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
 		$uuid = uniqid(); //Generate a UUID for obfuscation
 		$member_handler = xoops_gethandler('member');
-		$user = $member_handler->getUser($user_id);
+		$user = $member_handler->getUser($xoops_user_id);
 		//Obfuscate identification
 		if($user) {
 			self::updateUser($external_id, array(
@@ -136,16 +139,19 @@ class Formulize {
 	 */
 	static function updateUser($user_id, $data) {
 		self::init();
-		$user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		$xoops_user_id = self::getXoopsResourceID(self::USER_RESOURCE, $user_id);
+		if(!$xoops_user_id) {
+			return false;
+		}
 		$member_handler = xoops_gethandler('member');
-		$xoops_user = $member_handler->getUser($user_id);
+		$xoops_user = $member_handler->getUser($xoops_user_id);
 		//Update fields specified in $user_data
 		if($xoops_user) {
 			foreach($data as $key => $value) {
 				$xoops_user->setVar($key, $value);
 			}
 			//Make sure the user ID isn't changed
-			$xoops_user->setVar('userid', $user_id);
+			$xoops_user->setVar('uid', $xoops_user_id);
 			//If the user wasn't inserted, return false
 			return $member_handler->insertUser($xoops_user, true);
 		} else {
@@ -274,7 +280,7 @@ class Formulize {
 			return false;
 		}
 	}
-	
+	 
 	/**
 	 * Obtain a list of the available screen names
 	 * @param limitUser boolean   Whether to limit the list of screens to those
@@ -283,6 +289,7 @@ class Formulize {
 	 */
 	static function getScreens($limitUser=false) {
 		global $xoopsUser;
+		
 		self::init();
 		$options = array();
 
@@ -300,12 +307,17 @@ class Formulize {
 			';
 		//If only screens available to the current user are desired
 		} else {
+			if(!$xoopsUser) {
+				$options[0] = ('No Formulize Screens Found');
+				return $options;
+			}
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
 			$accessible_forms = array();
-
+			
 			//Get the groups this member belongs to
 			$groups = $members->getGroupsByUser($xoopsUser->getVar('uid'));
+			
 			//Get the forms visible to each of those groups, and unite them
 			foreach($groups as $group) {
 				$group_forms = $group_perms->getItemIds('view_form', $group, getFormulizeModId());
@@ -333,15 +345,16 @@ class Formulize {
 			}
 		}
 		
-		if (count($options) == 0 || !$xoopsUser) {
-			$options[0] = 'No Formulize Screens Found';
+		if (count($options) == 0) {
+			$options[0] = ('No Formulize Screens Found');
 		}
-
+		
 		return $options;
 	}
 
 	static function renderScreen ($screenID) {
 		self::init();
+		
 		//Set the screen ID
 		$formulize_screen_id = $screenID;
 
@@ -374,12 +387,12 @@ class Formulize {
 			//If this global is set, then we are requiring a date-box element. In that case we shall add the following
 			//scripts to our page load, in order for the calendar to achieve functionality.
 			if(isset($GLOBALS['formulize_calendarFileRequired']))
-			{
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/calendar.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/calendar-setup.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/libraries/jalalijscalendar/jalali.js'></script>";
-				echo "<script type='text/javascript' src='" . ICMS_URL . "/language/" . $icmsConfig['language'] . "/local.date.js'></script>";
-				echo "<script type='text/javascript'>".$GLOBALS['formulize_calendarFileRequired']."</script>";
+			{	
+				foreach($GLOBALS['formulize_calendarFileRequired']['scripts'] as $thisScript) {
+                                       echo "<script type='text/javascript' src='" . $thisScript . "'></script>";
+                }
+				
+				echo "<script type='text/javascript'>".$GLOBALS['formulize_calendarFileRequired']['src']."</script>";
 				
 				//In order to append our stylesheet, and ensure that no matter the load and buffer order of our page, we shall be including
 				//the style sheet via a JS call that appends the link tag to the head section on load.
@@ -393,19 +406,19 @@ class Formulize {
 						newNode.setAttribute('type', 'text/css');
 						newNode.setAttribute('href', fileURL);
 						document.getElementsByTagName('head')[0].appendChild(newNode);
+					}";
+					foreach($GLOBALS['formulize_calendarFileRequired']['stylesheets'] as $thisSheet) {
+						print " fetchCalendarCSS('" . $thisSheet ."'); ";
 					}
-					fetchCalendarCSS('" . ICMS_URL . "/libraries/jalalijscalendar/aqua/style.css');
-					</script>
-				";
+					print "</script>";
 			}
 		}
-		
 		//Inject formulize content
 		echo $content;
 		//Close our div tag
 		echo '</div>';
 	}
-
+	
 	/**
 	 * Insert a mapping from the external resource to a Formulize resource
 	 * @param external_id     int     The external resource ID
@@ -450,7 +463,7 @@ class Formulize {
 			AND external_id = ' . intval($external_id)
 		);
 	}
-
+	 
 	/**
 	 * Converts an external resource ID into a XOOPS resource ID using the associated mapping table
 	 * @param external_id  int   The external resource ID to convert
@@ -470,7 +483,7 @@ class Formulize {
 		}
 		return intval($mapping_result[0]);
 	}
-
+	 
 	/**
 	 * Converts an XOOPS resource ID into a external resource ID using the associated mapping table
 	 * @param xoops_id  int   The external resource ID to convert
