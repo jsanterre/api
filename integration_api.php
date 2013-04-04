@@ -280,7 +280,7 @@ class Formulize {
 			return false;
 		}
 	}
-	 
+	
 	/**
 	 * Obtain a list of the available screen names
 	 * @param limitUser boolean   Whether to limit the list of screens to those
@@ -289,7 +289,6 @@ class Formulize {
 	 */
 	static function getScreens($limitUser=false) {
 		global $xoopsUser;
-		
 		self::init();
 		$options = array();
 
@@ -314,10 +313,9 @@ class Formulize {
 			$members = xoops_gethandler('member');
 			$group_perms = xoops_gethandler('icms_member_groupperm');
 			$accessible_forms = array();
-			
+
 			//Get the groups this member belongs to
 			$groups = $members->getGroupsByUser($xoopsUser->getVar('uid'));
-			
 			//Get the forms visible to each of those groups, and unite them
 			foreach($groups as $group) {
 				$group_forms = $group_perms->getItemIds('view_form', $group, getFormulizeModId());
@@ -345,13 +343,13 @@ class Formulize {
 			}
 		}
 		
-		if (count($options) == 0) {
-			$options[0] = ('No Formulize Screens Found');
+		if (count($options) == 0 || !$xoopsUser) {
+			$options[0] = 'No Formulize Screens Found';
 		}
-		
+
 		return $options;
 	}
-	
+
 	static function renderScreen ($screenID) {
 		self::init();
 		//Set the screen ID
@@ -462,7 +460,7 @@ class Formulize {
 			AND external_id = ' . intval($external_id)
 		);
 	}
-	 
+
 	/**
 	 * Converts an external resource ID into a XOOPS resource ID using the associated mapping table
 	 * @param external_id  int   The external resource ID to convert
@@ -482,7 +480,7 @@ class Formulize {
 		}
 		return intval($mapping_result[0]);
 	}
-	 
+
 	/**
 	 * Converts an XOOPS resource ID into a external resource ID using the associated mapping table
 	 * @param xoops_id  int   The external resource ID to convert
